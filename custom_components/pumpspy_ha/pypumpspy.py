@@ -244,10 +244,12 @@ class Pumpspy:
 
     async def fetch_data(self, intervals):
         """Get all the data from the API"""
-        async with aiohttp.ClientSession(headers=self.authed_headers()) as session:
-            data = {"current": None, "ac": {}, "dc": {}}
-            while True:
+        retries = 0
+        max_retries = 2
+        while retries < max_retries:
+            async with aiohttp.ClientSession(headers=self.authed_headers()) as session:
                 try:
+                    data = {"current": None, "ac": {}, "dc": {}}
                     data["current"] = await self.fetch_current_data(session=session)
 
                     for interval in intervals:
@@ -261,17 +263,20 @@ class Pumpspy:
                     LOG.debug(data)
                     return data
                 except InvalidAccessToken:
+                    retries += 1
+                    LOG.info("Access token expired, refreshing (attempt %s/%s)", retries, max_retries)
                     await self.get_token()
                     await asyncio.sleep(1)  # don't hammer the server
-                    break
 
                 except (
                     aiohttp.ServerDisconnectedError,
                     aiohttp.ClientResponseError,
                     aiohttp.ClientConnectorError,
                 ) as err:
-                    LOG.debug("Oops, the server connection was dropped: %s", err)
+                    retries += 1
+                    LOG.debug("Server connection error: %s (attempt %s/%s)", err, retries, max_retries)
                     await asyncio.sleep(1)  # don't hammer the server
+        raise InvalidAccessToken
 
     async def fetch_current_data(self, session: aiohttp.ClientSession):
         """Get the current data"""

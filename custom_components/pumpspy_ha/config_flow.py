@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.core import callback
-from .pypumpspy import Pumpspy
+from .pypumpspy import InvalidAccessToken, Pumpspy
 
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
@@ -50,12 +50,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.pumpspy = Pumpspy(
                 username=user_input[CONF_USERNAME], password=user_input[CONF_PASSWORD]
             )
-            await self.pumpspy.setup()
-            self.data[CONF_USERNAME] = user_input[CONF_USERNAME]
-            self.data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
-            self.locations = await self.pumpspy.get_locations()
-            if self.locations:
-                return await self.async_step_location()
+            try:
+                await self.pumpspy.setup()
+            except (InvalidAccessToken, Exception) as err:
+                _LOGGER.error("Error authenticating with Pumpspy: %s", err)
+                errors["base"] = "auth"
+            else:
+                self.data[CONF_USERNAME] = user_input[CONF_USERNAME]
+                self.data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+                self.locations = await self.pumpspy.get_locations()
+                if self.locations:
+                    return await self.async_step_location()
+                else:
+                    errors["base"] = "no_locations"
 
         data_schema = vol.Schema(
             {
@@ -81,7 +88,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_device()
 
         if user_input is not None:
-            self.pumpspy.set_location(self.locations[0]["lid"])
+            self.pumpspy.set_location(int(user_input["location"]))
             self.devices = await self.pumpspy.get_devices()
             if self.devices:
                 return await self.async_step_device()
@@ -114,7 +121,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # skip this step if there is only 1 device
         if len(self.devices) == 1:
             self.data[CONF_DEVICEID] = self.devices[0]["deviceid"]
-            await self.async_set_unique_id(self.devices[0]["deviceid"])
+            await self.async_set_unique_id(str(self.devices[0]["deviceid"]))
             self._abort_if_unique_id_configured()
             self.device_name = self.devices[0]["device_types_name"]
             return await self.async_step_sensors()
