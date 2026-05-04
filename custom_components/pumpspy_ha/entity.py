@@ -19,7 +19,7 @@ class PumpspyEntity(CoordinatorEntity[PumpspyCoordinator]):
     def device_info(self) -> DeviceInfo | None:
         try:
             return DeviceInfo(
-                identifiers={(DOMAIN, self.coordinator.data["current"][0]["deviceid"])},
+                identifiers={(DOMAIN, str(self.coordinator.data["current"][0]["deviceid"]))},
                 name=self.coordinator.data["current"][0]["user_nickname"],
                 manufacturer=MANUFACTURER,
                 model=self.coordinator.data["current"][0]["device_types_name"],
